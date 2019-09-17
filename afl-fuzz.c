@@ -99,6 +99,7 @@ int max_broken_par = 1;
 int max_reduced_pat = 1;
 EXP_ST u8 *trace_path = NULL;              /* the profiling trace path                                           */
 char *locations = NULL;                    /* all target locations                                               */
+char *crash_loc = NULL;
 struct C_SearchEngine * engine;            /* plausible patch search engine                                      */
 EXP_ST u64 num_test_reach_target = 0;      /* collect the number of test case that can reach the target location */
 EXP_ST u64 total_num_test = 0;             /* total number of newly generated test case                          */
@@ -3231,7 +3232,7 @@ static void write_crash_readme(void) {
 }
 
 //added to save target test cases
-bool evaluate_if_reach(void* mem, u32 len){
+bool evaluate_if_reach(void* mem, u32 len, u8 fault){
   bool ret = false;
   cur_reduced_num_plausible_patch = -1;
   cur_num_broken_partition = -1;
@@ -3246,6 +3247,7 @@ bool evaluate_if_reach(void* mem, u32 len){
 
     FILE * fp;
     char * line = NULL;
+    char * last_line = NULL;
     size_t rlen = 0; ssize_t read;
     char * reachedLocs = alloc_printf("");
     bool isReachTargetLoc = false;
@@ -3272,11 +3274,15 @@ bool evaluate_if_reach(void* mem, u32 len){
 
         isReachTargetLoc = true;
       }
+      last_line = line;
       //ck_free(_bl_);
     }
     fclose(fp);
     fclose(fopen(trace_file, "w"));
     ck_free(trace_file);
+
+    if ((fault == FAULT_TMOUT || fault == FAULT_CRASH || fault == FAULT_ERROR) && strcmp(last_line, crash_loc))
+        isReachTargetLoc = false;
 
     //if current test case can reach the target location, save this test case and invoke the F1X
     if(isReachTargetLoc){
@@ -3353,7 +3359,7 @@ static u8 save_if_interesting(char** argv, void* mem, u32 len, u8 fault) {
 
   bool intersting_for_repair = false;
   //if (fault != FAULT_TMOUT && fault != FAULT_CRASH && fault != FAULT_ERROR)
-  intersting_for_repair = evaluate_if_reach(mem, len);
+  intersting_for_repair = evaluate_if_reach(mem, len, fault);
   u8  *fn = "";
   u8  hnb;
   s32 fd;
@@ -8092,6 +8098,7 @@ void f1x_init(char* f1x_cmd_path){
     //get all the locations of plausible patches
     int length;
     c_getPatchLoc(engine, &length, &locations);
+    c_getCrashLoc(engine, &crash_loc);
     if(length == 0){
       FATAL("No patch found by f1x");
       exit(1);
