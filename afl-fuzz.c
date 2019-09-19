@@ -208,6 +208,14 @@ EXP_ST u32 queued_paths,              /* Total number of queued testcases */
            current_entry,             /* Current queue entry ID           */
            havoc_div = 1;             /* Cycle count divisor for havoc    */
 
+EXP_ST u64 total_num_plausible_patch,     /* Total number of plausile patches   */
+           current_num_plausible_patch,   /* Current number of plausile patches */
+           current_num_partition,         /* Current number of patch partitions */
+           totalNumBrokenPartition,       /* Number of broken partitions        */
+           numTestReducePlausiblePatches, /* Number of tests breaking partitions*/
+           numTestBreakPartition,        /* Number of tests ruling out patches */
+           current_num_test_reach_target; /* Number of tests ruling out patches */
+
 EXP_ST u64 total_crashes,             /* Total number of crashes          */
            unique_crashes,            /* Crashes with unique signatures   */
            total_tmouts,              /* Total number of timeouts         */
@@ -3281,6 +3289,7 @@ bool evaluate_if_reach(void* mem, u32 len, u8 fault){
     fclose(fopen(trace_file, "w"));
     ck_free(trace_file);
 
+    //check whether a triggered crash is the bug that we are fixing
     if ((fault == FAULT_TMOUT || fault == FAULT_CRASH || fault == FAULT_ERROR) && strcmp(last_line, crash_loc))
         isReachTargetLoc = false;
 
@@ -3304,7 +3313,7 @@ bool evaluate_if_reach(void* mem, u32 len, u8 fault){
           ( repair_schedule == SAN_PAR && cur_num_broken_partition > 3)  ||
           ( repair_schedule == SAN_PART && (cur_num_broken_partition > 3 || cur_reduced_num_plausible_patch > 0)) ){
         ret = true;
-        OKF("find test break %d partition, reduced plausible patches: %d", cur_num_broken_partition, cur_reduced_num_plausible_patch);
+        //OKF("find test break %d partition, reduced plausible patches: %d", cur_num_broken_partition, cur_reduced_num_plausible_patch);
       }
 
       //record how many test case that breaks partition is fuzzed from interesting test case (break partition)
@@ -3321,8 +3330,14 @@ bool evaluate_if_reach(void* mem, u32 len, u8 fault){
 
       ck_free(fileName);
 
+      current_num_plausible_patch = num_plausible_patch;
+      current_num_partition = executionStat.numPartition;
+      totalNumBrokenPartition = executionStat.totalNumBrokenPartition;
+      numTestReducePlausiblePatches = executionStat.numTestReducePlausiblePatches;
+      numTestBreakPartition = executionStat.numTestBreakPartition;
+      current_num_test_reach_target = num_test_reach_target;
       //output statistic information
-      if(num_test_reach_target % 100 == 0){
+      /*if(num_test_reach_target % 100 == 0){
         OKF("current(%llu) number of plausible patches is: %d", num_test_reach_target, num_plausible_patch);
         OKF("current number of partition is: %d", executionStat.numPartition);
         OKF("current number of broken parition(totally) is : %d", executionStat.totalNumBrokenPartition);
@@ -3340,13 +3355,12 @@ bool evaluate_if_reach(void* mem, u32 len, u8 fault){
         OKF("The number fuzzed tests is %d, %d of them break partitions", num_fuzzed_test, num_test_bp);
         OKF("The number fuzzed interesting tests is %d, %d of them break partitions", num_fuzzed_interesting_test, num_test_bp_from_interesting_test);
         FATAL("There is no plausible patch any more!");
-      }
+      }*/
+      if(num_plausible_patch<=0)
+          FATAL("There is no plausible patch any more!");
     }
     ck_free(reachedLocs);
   }
-
-  if(total_num_test % 100 == 0)
-    OKF("Total number of generated test is %llu, the number of test reaching target location is %llu", total_num_test, num_test_reach_target);
   return ret;
 //end
 }
@@ -4092,10 +4106,10 @@ static void check_term_size(void);
    execve() calls, plus in several other circumstances. */
 
 //used for debug
-static void show_stats(void){
+static void show_stats_back(void){
 }
 
-static void show_stats_back(void) {
+static void show_stats(void) {
 
   static u64 last_stats_ms, last_plot_ms, last_ms, last_execs;
   static double avg_exec;
@@ -4237,6 +4251,8 @@ static void show_stats_back(void) {
 #define SP5     "     "
 #define SP10    SP5 SP5
 #define SP20    SP10 SP10
+
+#define bgLONG "\x1b[324m"
 
   /* Lord, forgive me this. */
 
@@ -4410,9 +4426,20 @@ static void show_stats_back(void) {
 
   SAYF (bSTG bV bSTOP "  total tmouts : " cRST "%-22s " bSTG bV "\n", tmp);
 
-  /* Aaaalmost there... hold on! */
+    /* Aaaalmost there... hold on! */
+  SAYF(bVR bH bSTOP cCYA " Patch information " bSTG bH10 bH2 bH5 bHT bH10
+                 bH5 bH2 bH bH5 bH2 bH2 bH10 bH2 bH bVL "\n");
+  sprintf(tmp, "%llu (%llu overfitted)", current_num_plausible_patch, total_num_plausible_patch - current_num_plausible_patch);
+  SAYF (bSTG bV bSTOP "  num of patches : " cRST "%-58s " bSTG bV "\n", tmp);
+  SAYF (bSTG bV bSTOP "  num of partitions : " cRST "%-55llu " bSTG bV "\n", current_num_partition);
+  SAYF (bSTG bV bSTOP "  num of broken partitions : " cRST "%-48llu " bSTG bV "\n", totalNumBrokenPartition);
+  SAYF (bSTG bV bSTOP "  num of tests ruling out patches : " cRST "%-41llu " bSTG bV "\n", numTestReducePlausiblePatches);
+  SAYF (bSTG bV bSTOP "  num of tests breaking partitions : " cRST "%-40llu " bSTG bV "\n", numTestBreakPartition);
+  SAYF (bSTG bV bSTOP "  num of tests reaching patch location : " cRST "%-36llu " bSTG bV "\n", current_num_test_reach_target);
+  //total_num_plausible_patch,     /* Total number of plausile patches   */
 
-  SAYF(bVR bH cCYA bSTOP " fuzzing strategy yields " bSTG bH10 bH bHT bH10
+
+  SAYF(bVR bH cCYA bSTOP " fuzzing strategy yields " bSTG bH10 bH bH bH10
        bH5 bHB bH bSTOP cCYA " path geometry " bSTG bH5 bH2 bH bVL "\n");
 
   if (skip_deterministic) {
@@ -4557,7 +4584,13 @@ static void show_stats_back(void) {
 
   } else SAYF("\r");
 
-  /* Hallelujah! */
+//  SAYF(SET_G1 bSTG bLT bH bSTOP cCYA " process timing " bSTG bH30 bH5 bH2 bHB
+//               bH bSTOP cCYA " overall results " bSTG bH5 bRT "\n");
+//
+//  SAYF(bVR bH bSTOP cCYA " cycle progress " bSTG bH20 bHB bH bSTOP cCYA
+//               " map coverage " bSTG bH bHT bH20 bH2 bH bVL "\n");
+
+
 
   fflush(0);
 
@@ -5362,7 +5395,7 @@ static u8 fuzz_one(char** argv) {
   /*******************************************
    * CALIBRATION (only if failed earlier on) *
    *******************************************/
-  OKF("queue_cur num_broken_partition: %d reduced_num_plausible_patch: %d", queue_cur->num_broken_partition, queue->reduced_num_plausible_patch);
+  //OKF("queue_cur num_broken_partition: %d reduced_num_plausible_patch: %d", queue_cur->num_broken_partition, queue->reduced_num_plausible_patch);
 
   if(repair_schedule==0 || (repair_schedule!=0 && queue_cur->num_broken_partition <= 0 && queue->reduced_num_plausible_patch <= 0)){
   if (queue_cur->cal_failed) {
@@ -8099,6 +8132,7 @@ void f1x_init(char* f1x_cmd_path){
     int length;
     c_getPatchLoc(engine, &length, &locations);
     c_getCrashLoc(engine, &crash_loc);
+    total_num_plausible_patch = c_getNumPlausiblePatch(engine);
     if(length == 0){
       FATAL("No patch found by f1x");
       exit(1);
